@@ -103,11 +103,11 @@ def buildPredixSDKs(config):
 			print("CurrentDir " + os.getcwd())
 			print("ChangeDir = " + config.predixSDKs)
 			os.chdir(config.predixSDKs)
-			try :
-				updateGitModules(config)
-				checkoutSubmodules()
-			finally:
-				restoreGitModules(config)
+			#try :
+			#	updateGitModules(config)
+			#	checkoutSubmodules()
+			#finally:
+			#	restoreGitModules(config)
 			print("ChangeDir = ..")
 			os.chdir("..")
 			print("Build using maven setting : "+config.mvnsettings +" Maven Repo : "+config.mavenRepo)
@@ -122,7 +122,7 @@ def buildPredixSDKs(config):
 					os.chdir("..")
 				else:
 					os.chdir(config.predixSDKs)
-					statementStatus  = subprocess.call("mvn clean package -s ../"+config.mvnsettings+" -Dmaven.repo.local="+config.mavenRepo, shell=True)
+					statementStatus  = subprocess.call("mvn clean package -s "+config.mvnsettings+" -Dmaven.repo.local="+config.mavenRepo, shell=True)
 					os.chdir("..")
 			else:
 				print("mvnSettings=" + config.mvnsettings)
@@ -132,7 +132,7 @@ def buildPredixSDKs(config):
 					os.chdir("..")
 				else:
 					os.chdir(config.predixSDKs)
-				 	statementStatus  = subprocess.call("mvn clean package -s ../"+ config.mvnsettings, shell=True)
+				 	statementStatus  = subprocess.call("mvn clean package -s "+ config.mvnsettings, shell=True)
 					os.chdir("..")
 		 	if statementStatus != 0:
 				print("Maven build failed.")
@@ -331,13 +331,20 @@ def uploadFileToDataseed(url, data, files):
 		print("URL to tunnel into =" + url.split("https://")[1])
 		connection.set_tunnel(url.split("https://")[1])
 		connection.set_debuglevel(3)
-		connection.request ('POST', url + "/uploadAssetData",
-                        *encode_multipart_data (data, files))
+
+		content_type, body = MultipartFormdataEncoder().encode(data, files)
+		headers = {'content-type': content_type, 'content-length': str (len (body))}
+
+		connection.request ('POST', url + "/uploadAssetData", body, headers)
     else:
     	connection = HTTPSConnection (url.split("https://")[1])
 	connection.set_debuglevel(3)
-    	connection.request ('POST', "/uploadAssetData",
-                        *encode_multipart_data (data, files))
+
+	content_type, body = MultipartFormdataEncoder().encode(data, files)
+	headers = {'content-type': content_type, 'content-length': str (len (body))}
+
+    	connection.request ('POST', "/uploadAssetData", body, headers)
+
     response = connection.getresponse ()
     print ('Code: %s %s', response.status, response.reason)
     #print ('response = %s', response.read ())
@@ -355,10 +362,9 @@ def deployReferenceAppCreateDataseed(config):
 
 		getDataseedUrl(config)
 
-		data = {'username' : config.rmdAdmin1,
-        		'password' : config.rmdAdmin1Pass}
+		data = [('username' , config.rmdAdmin1), ('password' , config.rmdAdmin1Pass)]
 
-		files = {'file' : './data-seed-service/src/main/resources/rmdapp/AssetData.xls'}
+		files = [('file', './data-seed-service/src/main/resources/rmdapp/AssetData.xls', './data-seed-service/src/main/resources/rmdapp/AssetData.xls')]
 
 		#calling data loading on dataseedURl
 		output= uploadFileToDataseed(config.DATA_SEED_URL, data, files)
@@ -403,7 +409,7 @@ def deployReferenceAppCreateDatasource(config):
 		#httpDatariverRepoName = "predix-http-datariver"
 		#checkoutDeploytHttpRiver(httpDatariverRepoName,"",httpDataRiverAppName)
 
-		#https://github.build.ge.com/adoption/predix-websocket-server.git
+		#https://github.com/PredixDev/predix-websocket-server.git
 		config.retryCount=0
 	except:
 		print(traceback.print_exc())
@@ -429,8 +435,10 @@ def getWebsocketAppInfo(config):
 def deployReferenceAppCreateWebsocketServer(config):
 	try:
 		config.current='deployReferenceAppCreateWebsocketServer'
+		#createRabbitMQInstance(config)
 		getPredixUAAConfigfromVcaps(config)
 		websocketServerRepoName = "predix-websocket-server"
+		print ("Changed directory to "+os.getcwd()) 
 		configureManifest(config, websocketServerRepoName)
 		pushProject(config, config.websocketAppName, 'cf push '+config.websocketAppName+' -f '+websocketServerRepoName+'/manifest.yml',websocketServerRepoName, checkIfExists="false")
 
@@ -478,6 +486,9 @@ def deployReferenceAppCreateMachineSimulator(config):
 		print("****************** Running deployReferenceAppCreateMachineSimulator ******************")
 		config.current='deployReferenceAppCreateMachineSimulator'
 		getPredixUAAConfigfromVcaps(config)
+		cfTarget= subprocess.check_output(["cf", "app",config.dataIngestionAppName])
+		print (cfTarget)
+		config.DATA_INGESTION_URL="https://"+cfTarget.split('urls:')[1].strip().split('last uploaded:')[0].strip()
 		machineSimulatorRepoName = "machinedata-simulator"
 		configureManifest(config, machineSimulatorRepoName)
 		pushProject(config, config.machineSimulatorAppName, 'cf push '+config.machineSimulatorAppName+' -f '+machineSimulatorRepoName+'/manifest.yml',machineSimulatorRepoName, checkIfExists="false")
@@ -579,6 +590,9 @@ def configureManifest(config, manifestLocation):
 	if hasattr(config,'WEB_SOCKET_HOST') :
 		s = s.replace('${WEB_SOCKET_HOST}', config.WEB_SOCKET_HOST)
 		s = s.replace('${LIVE_DATA_WS_URL}', config.LIVE_DATA_WS_URL)
+	if hasattr(config,'rmdRabbitMQ') :
+		print ('Replacing rabbitMQService')
+		s = s.replace('${rabbitMQService}', config.rmdRabbitMQ)
 	f = open(manifestLocation+"/manifest.yml", 'w')
 	f.write(s)
 	f.close()
